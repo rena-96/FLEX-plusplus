@@ -1,7 +1,9 @@
 <p align="center">
   <img src="flex_plus_plus.png" alt="FLEX++ logo" width="400">
 </p>
-# **FL**uctuation-dissipation **EX**tension for VASPsol++
+
+
+**FL**uctuation-dissipation **EX**tension for VASPsol++
 
 <!-- ============================================================= -->
 <!-- ADD YOUR DESCRIPTION HERE                                      -->
