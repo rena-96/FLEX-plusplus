@@ -23,7 +23,7 @@ Please make sure to cite the following if you use `FLEX++` in your research:
 
 - `Python` 3.6 or higher
 - `ASE` 3.22.1 or higher
-- `VASP` 5.4.1 or higher, with the `VASPsol++` add-on
+- `VASP` 5.4.1 or higher, with the `VASPsol++` or `VASPsol` add-on
 
 ## Installation
 
@@ -66,10 +66,7 @@ module load YOUR_VASP_VERSION
 module load ASE
 export PYTHONPATH=$PYTHONPATH:/xxx/flexpp
 
-
 export ASE_VASP_COMMAND="mpiexec vasp_std" # or your ASE command
-
-
 ```
 
 Some HPCs have a different configurations fro  `VASP_COMMAND` or `ASE_VASP_COMMAND`, so ask your local HPC support for configuring it for your settings. We added an example for slurm. 
