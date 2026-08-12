@@ -1,6 +1,6 @@
 # FLEX++
 
-**FL**uctuation-dissipation **EX**tension for VASPsol++
+**FL**uctuation-dissipation **EX**tension for VASPsoli**++**
 
 <!-- ============================================================= -->
 <!-- ADD YOUR DESCRIPTION HERE                                      -->
@@ -60,20 +60,28 @@ If no error occurs, `FLEX++` should have been imported into your path!
 
 #### ASE-related settings
 
-In the job submission script, besides the `PYTHONPATH`, you should also set some [environment variables](https://wiki.fysik.dtu.dk/ase/ase/calculators/vasp.html#environment-variables) for the `ASE` interface to `VASP`:
-
+In the job submission script, you should load the ASE and VASP modules, plus the `PYTHONPATH` for FLEX++. It will look like this:
 ```
+module load YOUR_VASP_VERSION
+module load ASE
 export PYTHONPATH=$PYTHONPATH:/xxx/flexpp
-export VASPHOME=/xxx/vasp.x.x.x/bin
-export VASP_COMMAND="mpirun -n $NSLOTS $VASPHOME/vasp_std"
-export VASP_PP_PATH=/xxx/potentials/
+
+
+export ASE_VASP_COMMAND="mpiexec vasp_std" # or your ASE command
+
+
 ```
 
-The `VASP_COMMAND` will vary from machine to machine, depending on the job scheduler and the number of cores to use. You may need to adjust it yourself (and the script header, of course).
+Some HPCs have a different configurations fro  `VASP_COMMAND` or `ASE_VASP_COMMAND`, so ask your local HPC support for configuring it for your settings. We added an example for slurm. 
+
+Learn more about VASPsol++ [here](https://github.com/VASPsol/VASPsol/). 
+
+For this module kit, we took inspiration from [Electrochemical Optimizer](https://github.com/zishengz/echo/).
+
 
 ## Tutorials
 
-See the `examples` folder.
+Check our `tutorial` folder! Further explanation is given there. 
 
 ## Authors
 
