@@ -16,7 +16,8 @@ def initialize_module():
         print('Fluctuation-Dissipation Extension for VASPsol++')
 
         print('      Copyright © 2026 Technical University of Denmark      ')
-        print '      This version of the software was developed by \n Renata Sechi, Ph.D., and Ronan Gleeson, Msc.'
+        print('      This version of the software was developed by')
+        print('      Renata Sechi, Ph.D., and Ronan Gleeson, Msc.')
         print('      Please cite: Chemrxiv  ')
 
         _initialized = True
