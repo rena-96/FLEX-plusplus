@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="flex_plu_plus.png" alt="FLEX++ logo" width="400">
+  <img src="flex_plus_plus.png" alt="FLEX++ logo" width="400">
 </p>
 # **FL**uctuation-dissipation **EX**tension for VASPsol++
 
