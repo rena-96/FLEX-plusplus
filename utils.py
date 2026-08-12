@@ -1,4 +1,4 @@
-from echo.data import pp_dict
+from flexpp.data import pp_dict
 from ase.db import connect
 from ase.io import read, write
 from ase.geometry import find_mic

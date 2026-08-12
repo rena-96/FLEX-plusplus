@@ -1,7 +1,7 @@
 
 from ase.io import read, write, Trajectory
 from ase.db import connect
-from echo.utils import default_nelect_from_potcar
+from flexpp.utils import default_nelect_from_potcar
 from ase.parallel import world, parprint
 from ase import units 
 import numpy as np

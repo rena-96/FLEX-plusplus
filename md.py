@@ -1,4 +1,4 @@
-from echo.utils import get_GCDFT, get_fmax, get_nelect_neu_pp, get_nelect_incar 
+from flexpp.utils import get_GCDFT, get_fmax, get_nelect_neu_pp, get_nelect_incar 
 from ase.calculators.vasp import Vasp
 from ase.io import read, write
 from ase.db import connect
@@ -215,4 +215,4 @@ def langevin_fixpot_slowgrowth_combobond(
     return geom_md
 
 
-#def langevin_fixpot_slowgrowth_vasp(
+

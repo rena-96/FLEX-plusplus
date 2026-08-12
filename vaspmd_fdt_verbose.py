@@ -1,6 +1,6 @@
 from ase.io import read, write, Trajectory
 from ase.db import connect
-from echo.utils import get_nelect_neu_pp, get_GCDFT
+from flexpp.utils import get_nelect_neu_pp, get_GCDFT
 from ase.parallel import world
 from ase import units
 import numpy as np

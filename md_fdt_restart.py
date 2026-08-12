@@ -1,4 +1,4 @@
-from echo.utils import get_GCDFT, get_nelect_neu_pp, get_nelect_incar , default_nelect_from_potcar
+from flexpp.utils import get_GCDFT, get_nelect_neu_pp, get_nelect_incar , default_nelect_from_potcar
 from ase.parallel import parprint 
 from ase.calculators.vasp import Vasp
 from ase.io import read, write, Trajectory
