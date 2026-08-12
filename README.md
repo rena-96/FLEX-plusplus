@@ -1,6 +1,7 @@
-# FLEX++
-
-**FL**uctuation-dissipation **EX**tension for VASPsoli**++**
+<p align="center">
+  <img src="flex_plu_plus.png" alt="FLEX++ logo" width="400">
+</p>
+# **FL**uctuation-dissipation **EX**tension for VASPsol++
 
 <!-- ============================================================= -->
 <!-- ADD YOUR DESCRIPTION HERE                                      -->
@@ -85,7 +86,7 @@ Check our `tutorial` folder! Further explanation is given there.
 
 ## Authors
 
-Developed by Renata Sechi, Ph.D., and Ronan Gleeson, M.Sc.
+Developed by Renata Sechi, Ph.D., and Ronan Gleeson, M.Sc. at the Hansen's Group at DTU Energy. 
 
 ## License
 
