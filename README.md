@@ -5,15 +5,14 @@
 
 **FL**uctuation-dissipation **EX**tension for VASPsol++
 
-<!-- ============================================================= -->
-<!-- ADD YOUR DESCRIPTION HERE                                      -->
-<!-- A short paragraph on what FLEX++ does, e.g. ab initio MD,      -->
-<!-- slow-growth free energetics, and applied-potential            -->
-<!-- calculations built on top of VASPsol++.                       -->
-<!-- ============================================================= -->
-
-`FLEX++` is a toolkit for ... <!-- replace this line with your description -->
-
+`FLEX++` is a toolkit to perform ab initio molecular dynamics (AIMD) simulations with an applied potential, and slow-growth dynamics on top of them.
+ 
+Two approaches are available for controlling the electrode potential:
+ 
+- **Thermopotentiostat.** This approach uses the fluctuation-dissipation theorem to control the charge and the potential. Both the charge and the applied potential are allowed to fluctuate following a Gaussian distribution, with the potential building the Gaussian around the user's target potential.
+- **Fixed-potential ensemble.** In this approach, the charge is allowed to vary while the potential is fixed to a value chosen by the user.
+The slow-growth approach can be combined with either method. `FLEX++` interfaces with both `VASPsol++` and `VASPsol`.
+ 
 It is an external standalone code, interacting with VASP via the ASE interface, needless of any extra and elaborate patching on VASP.
 
 Please make sure to cite the following if you use `FLEX++` in your research:
@@ -46,12 +45,10 @@ mv FLEX-plusplus-master flexpp
 After fetching the repo, add it to your `PYTHONPATH` by:
 
 ```
-export PYTHONPATH=$PYTHONPATH:`pwd`/flexpp/
+export PYTHONPATH=$PYTHONPATH:/absolute/path/to/directory/flexpp/
 ```
-
-Remember to add this export line to your `~/.bashrc` or the submission script, so that the `FLEX++` package is accessible by Python when you run the job.
-
-You need to use the absolute path (you can check it by running `pwd` in the Bash shell) for this purpose.
+ 
+Add it to your `~/.bashrc` or to the submission script, so that the `FLEX++` package can be found when you run the job. It needs to be the absolute path! 
 
 After these, run the following line to test:
 
@@ -59,7 +56,7 @@ After these, run the following line to test:
 python -c 'import flexpp'
 ```
 
-If no error occurs, `FLEX++` should have been imported into your path!
+If no error occurs, `FLEX++` should have been imported into your path.
 
 #### ASE-related settings
 

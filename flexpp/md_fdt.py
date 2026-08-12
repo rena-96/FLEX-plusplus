@@ -187,7 +187,7 @@ def langevin_fdt_slowgrowth_combobond(
         trajectory=f'{label}.traj',
     )
 
-    print(f'\nFDT BOMD (pot_target= {pot_target}, timestep={timestep_fs} fs, potentialstat per {potentiostat_nsteps} fs)')
+    print(f'\nFDT AIMD (pot_target= {pot_target}, timestep={timestep_fs} fs, potentialstat per {potentiostat_nsteps} fs)')
     if pot_step is None:
         pot_step = 0.002 * nelect_neu
         print(f'Potentiostat step set to {pot_step:.6f} |e|/V (NELECT_neu={nelect_neu:8.3f} |e|)')
@@ -243,6 +243,4 @@ def langevin_fdt_slowgrowth_combobond(
             geom_md.calc.set(charge=-nelect_net_new)
     return geom_md
 
-
-#def langevin_fixpot_slowgrowth_vasp(
 
