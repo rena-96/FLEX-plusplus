@@ -1,10 +1,11 @@
-from ase.io import read, write, Trajectory
-from ase.db import connect
-from flexpp.utils import get_nelect_neu_pp, get_GCDFT
-from ase.parallel import world
-from ase import units
-import numpy as np
 import os
+
+import numpy as np
+from ase import units
+from ase.io import Trajectory, read, write
+from ase.parallel import world
+
+from flexpp.utils import get_GCDFT, get_nelect_neu_pp
 
 
 def get_bluemoon(filename="REPORT"):
@@ -50,6 +51,34 @@ def slow_growth(
     temperature_K=300,
     continue_run=True,
 ):
+    """Drive a VASPsol slow-growth run with an FDT thermostat and verbose logging.
+
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Structure of the run, used to count the neutral electron number and
+        written out as ini.vasp for reference.
+    nsteps : int
+        Number of VASP invocations, i.e. slow-growth steps.
+    pot_target : float
+        Target electrode potential vs. SHE, in V.
+    pot_ref : float
+        Absolute potential of the SHE reference, in V.
+    pot_step : float, optional
+        Legacy proportional gain in |e|/V. Defaults to 0.002 * NELECT_neu and
+        is only reported, not used by the FDT update.
+    timestep_fs : float
+        Timestep of the electron dynamics, in fs.
+    capacitance : float
+        Electrode capacitance C, in |e|/V.
+    R : float
+        Circuit resistance, in fs*V/|e|, setting the relaxation time R*C.
+    temperature_K : float
+        Temperature in K entering the fluctuation term.
+    continue_run : bool
+        Resume from the existing sg_atoms.traj, skipping the steps already
+        stored there, instead of counting from zero.
+    """
     write("ini.vasp", atoms)
     nelect_neu = get_nelect_neu_pp(atoms)
     if pot_step is None:
@@ -58,7 +87,6 @@ def slow_growth(
             f"Potentiostat step set to {pot_step:.6f} |e|/V (NELECT_neu={nelect_neu:8.3f} |e|)"
         )
     nelect_net_now = 0
-    # traj = Trajectory('sg_atoms.traj', 'a')
     traj_file = "sg_atoms.traj"
     if os.path.exists(traj_file) and continue_run:
         traj = Trajectory(traj_file, "a")
@@ -70,18 +98,16 @@ def slow_growth(
         print("Starting a new run")
     for i in range(steps_completed, nsteps):
         os.system("$VASP_COMMAND > vasp.out")
-        # GCDFT data extraction
         nelect_net_now, pot_now, fermi_shift, energy_gcdft_now = get_GCDFT(
             pot_ref, dirName="."
-        )  # this is ok because it is vs SHE
+        )
         rn = np.zeros(1)
         if world.rank == 0:
             rn[0] = np.random.standard_normal()
         world.broadcast(rn, 0)
         diss = nelect_net_now + capacitance * (pot_now - pot_target) * (1 - np.exp(-timestep_fs / (R * capacitance)))
-        fluct = rn[0] * np.sqrt(units.kB * temperature_K  * capacitance  * (1 - np.exp(-2 * timestep_fs / (R * capacitance))))    
-        nelect_net_new = diss + fluct 
-        # Blue moon ensemble data extraction
+        fluct = rn[0] * np.sqrt(units.kB * temperature_K * capacitance * (1 - np.exp(-2 * timestep_fs / (R * capacitance))))
+        nelect_net_new = diss + fluct
         os.system("cat REPORT >> bluemoon.txt")
 
         cv, lam, inv_sqrt_z, gkt, constrained_force, temp = get_bluemoon()
@@ -106,8 +132,6 @@ def slow_growth(
 
         with open("INCAR") as f:
             incar = f.readlines()
-
-        # Replace NELECT line if found, else insert at top
         found = False
         for i, line in enumerate(incar):
             if line.strip().startswith("NELECT"):

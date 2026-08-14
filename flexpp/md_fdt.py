@@ -1,15 +1,13 @@
-from flexpp.utils import get_GCDFT, get_fmax, get_nelect_neu_pp, get_nelect_incar 
-from ase.calculators.vasp import Vasp
-from ase.io import read, write
-from ase.db import connect
-from ase.optimize import FIRE
 import numpy as np
 from ase import units
-from ase.parallel import world
-from ase.md.langevin import Langevin
-from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
-
 from ase.constraints import FixInternals
+from ase.db import connect
+from ase.io import read
+from ase.md.langevin import Langevin
+from ase.parallel import world
+
+from flexpp.utils import get_GCDFT, get_nelect_incar, get_nelect_neu_pp
+
 
 def langevin_fdt(
     atoms=None,
@@ -27,11 +25,48 @@ def langevin_fdt(
     R = 50.,
     restart_traj=True,
 ):
+    """Run constant-potential FDT using VASPsol++.
+
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Starting structure; ignored when restarting from a trajectory.
+    timestep_fs : float
+        MD timestep in fs, also used as the electron-dynamics timestep.
+    temperature_K : float
+        Temperature in K, of both the thermostat and the charge fluctuations.
+    nsteps : int
+        Total number of MD steps to run.
+    friction : float
+        Langevin friction coefficient, in ASE units.
+    label : str
+        Run directory and prefix for the trajectory, log and database files.
+    pot_target : float
+        Target electrode potential vs. SHE, in V.
+    pot_ref : float
+        Absolute potential of the SHE reference, in V.
+    pot_step : float, optional
+        Legacy proportional gain in |e|/V; only used for the printed report.
+    potentiostat_nsteps : int
+        Number of MD steps between two charge updates.
+    calculator : ase.calculators.vasp.Vasp
+        VASP calculator used for the forces and the VASPsol output.
+    capacitance : float
+        Electrode capacitance C, in |e|/V.
+    R : float
+        Circuit resistance, in fs*V/|e|, setting the relaxation time R*C.
+    restart_traj : bool
+        Unused: the function always restarts when `<label>.traj` is present.
+
+    Returns
+    -------
+    ase.Atoms
+        The structure at the end of the run.
+    """
     mycalc = calculator
     mycalc.set(directory=label, txt='vasp.out')
     print(f'VASP settings:\n{mycalc.todict()}')
 
-    # Read geometry if trajectory file exists
     restart_traj = False
     fn_traj = f'{label}.traj'
     try:
@@ -43,7 +78,6 @@ def langevin_fdt(
         geom_md.set_calculator(mycalc)
         print('Starting from input geometry...')
 
-    # Get charge state and set calculator
     if restart_traj and 'charge' in geom_md.calc.todict().keys():
         charge_now = geom_md.calc.todict()['charge']
         geom_md.set_calculator(mycalc)
@@ -82,7 +116,7 @@ def langevin_fdt(
     while nsteps_done < nsteps:
         dyn.run(potentiostat_nsteps)
         nsteps_done += potentiostat_nsteps
-        nelect_net_now, pot_now, _ ,  energy_gcdft_now = get_GCDFT(pot_ref, dirName=label)
+        nelect_net_now, pot_now, _,  energy_gcdft_now = get_GCDFT(pot_ref, dirName=label)
         traj_nelect.append(nelect_net_now)
         traj_pot.append(pot_now)
         traj_gcfe.append(energy_gcdft_now)
@@ -107,17 +141,16 @@ def langevin_fdt(
                 rn[0] = np.random.standard_normal()
             world.broadcast(rn, 0)
             nelect_net_new = (
-                nelect_net_now #change sign
+                nelect_net_now  # change sign
                 + capacitance * (pot_now - pot_target)
-                    * (1 - np.exp(-timestep_fs / (R*capacitance)))
+                * (1 - np.exp(-timestep_fs / (R*capacitance)))
                 + rn[0] * np.sqrt(
                     units.kB * temperature_K * capacitance
-                        * (1 - np.exp(-2 * timestep_fs / (R*capacitance))))
-                )     
-                
-         #   nelect_net_new = nelect_net_now - (pot_target-pot_now)*pot_step #change
+                    * (1 - np.exp(-2 * timestep_fs / (R*capacitance))))
+            )
             geom_md.calc.set(charge=-nelect_net_new)
     return geom_md
+
 
 def langevin_fdt_slowgrowth_combobond(
     atoms=None,
@@ -138,11 +171,59 @@ def langevin_fdt_slowgrowth_combobond(
     capacitance =1.,
     R = 50.
 ):
+    """Run slow-growth BOMD with an FDT electron thermostat along a bond CV.
+
+    Combines the charge dynamics of `langevin_fdt` with a slowly growing
+    collective variable: the bond combination `cv_combo` is constrained with
+    `FixInternals` and its target advanced by `grwoth_per_step` after every
+    block, from `cv_ini` up to `cv_fin`. The current CV value is written to
+    `<label>/cv_now.txt` for restarts and stored with each database frame.
+
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Starting structure; ignored when restarting from a trajectory.
+    cv_combo : list
+        Bond combination defining the collective variable, in the format
+        expected by `ase.constraints.FixInternals` bondcombos.
+    cv_ini, cv_fin : float
+        Initial and final value of the collective variable, in Angstrom.
+    grwoth_per_step : float
+        Increment added to the collective variable per block, in Angstrom.
+    timestep_fs : float
+        MD timestep in fs, also used as the electron-dynamics timestep.
+    temperature_K : float
+        Temperature in K, of both the thermostat and the charge fluctuations.
+    nsteps : int
+        Maximum number of MD steps; the run also stops once `cv_fin` is passed.
+    friction : float
+        Langevin friction coefficient, in ASE units.
+    label : str
+        Run directory and prefix for the trajectory, log and database files.
+    pot_target : float
+        Target electrode potential vs. SHE, in V.
+    pot_ref : float
+        Absolute potential of the SHE reference, in V.
+    pot_step : float, optional
+        Legacy proportional gain in |e|/V; only used for the printed report.
+    potentiostat_nsteps : int
+        Number of MD steps between two charge updates and two CV increments.
+    calculator : ase.calculators.vasp.Vasp
+        VASP calculator used for the forces and the VASPsol output.
+    capacitance : float
+        Electrode capacitance C, in |e|/V.
+    R : float
+        Circuit resistance, in fs*V/|e|, setting the relaxation time R*C.
+
+    Returns
+    -------
+    ase.Atoms
+        The structure at the end of the run.
+    """
     mycalc = calculator
     mycalc.set(directory=label, txt='vasp.out')
     print(f'VASP settings:\n{mycalc.todict()}')
 
-    # Read geometry if trajectory file exists
     restart_traj = False
     fn_traj = f'{label}.traj'
     try:
@@ -154,7 +235,6 @@ def langevin_fdt_slowgrowth_combobond(
         geom_md.set_calculator(mycalc)
         print('Starting from input geometry...')
 
-    # Get charge state and set calculator
     if restart_traj and 'charge' in geom_md.calc.todict().keys():
         charge_now = geom_md.calc.todict()['charge']
         geom_md.set_calculator(mycalc)
@@ -171,7 +251,6 @@ def langevin_fdt_slowgrowth_combobond(
             charge_now = 0
             print('Starting from zero net charge...')
 
-    # Read CV now if restart
     if restart_traj:
         try:
             cv_now = eval(open(f'{label}/cv_now.txt').read())
@@ -233,14 +312,12 @@ def langevin_fdt_slowgrowth_combobond(
                 rn[0] = np.random.standard_normal()
             world.broadcast(rn, 0)
             nelect_net_new = (
-                nelect_net_now #change sign
+                nelect_net_now  # change sign
                 + capacitance * (pot_now - pot_target)
-                    * (1 - np.exp(-timestep_fs / (R*capacitance)))
+                * (1 - np.exp(-timestep_fs / (R*capacitance)))
                 + rn[0] * np.sqrt(
                     units.kB * temperature_K * capacitance
-                        * (1 - np.exp(-2 * timestep_fs / (R*capacitance))))
-                )  
+                    * (1 - np.exp(-2 * timestep_fs / (R*capacitance))))
+            )
             geom_md.calc.set(charge=-nelect_net_new)
     return geom_md
-
-
