@@ -1,15 +1,12 @@
-from flexpp.utils import get_GCDFT, get_fmax, get_nelect_neu_pp, get_nelect_incar 
-from ase.calculators.vasp import Vasp
-from ase.io import read, write
-from ase.db import connect
-from ase.optimize import FIRE
 import numpy as np
 from ase import units
-
-from ase.md.langevin import Langevin
-from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
-
 from ase.constraints import FixInternals
+from ase.db import connect
+from ase.io import read
+from ase.md.langevin import Langevin
+
+from flexpp.utils import get_GCDFT, get_nelect_incar, get_nelect_neu_pp
+
 
 def langevin_fixpot(
     atoms=None,
@@ -24,6 +21,38 @@ def langevin_fixpot(
     potentiostat_nsteps=10,
     calculator=None
 ):
+    """Run constant-potential Langevin BOMD with a proportional potentiostat.
+
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Starting structure; ignored when restarting from a trajectory.
+    timestep_fs : float
+        MD timestep in fs.
+    temperature_K : float
+        Langevin thermostat temperature in K.
+    nsteps : int
+        Total number of MD steps to run.
+    friction : float
+        Langevin friction coefficient, in ASE units.
+    label : str
+        Run directory and prefix for the trajectory, log and database files.
+    pot_target : float
+        Target electrode potential vs. SHE, in V.
+    pot_ref : float
+        Absolute potential of the SHE reference, in V.
+    pot_step : float, optional
+        Potentiostat gain in |e|/V. Defaults to 0.002 * NELECT_neu.
+    potentiostat_nsteps : int
+        Number of MD steps between two potentiostat corrections.
+    calculator : ase.calculators.vasp.Vasp
+        VASP calculator used for the forces and the VASPsol output.
+
+    Returns
+    -------
+    ase.Atoms
+        The structure at the end of the run.
+    """
     mycalc = calculator
     mycalc.set(directory=label, txt='vasp.out')
     print(f'VASP settings:\n{mycalc.todict()}')
@@ -103,6 +132,7 @@ def langevin_fixpot(
             geom_md.calc.set(charge=-nelect_net_new)
     return geom_md
 
+
 def langevin_fixpot_slowgrowth_combobond(
     atoms=None,
     cv_combo = None,
@@ -120,11 +150,50 @@ def langevin_fixpot_slowgrowth_combobond(
     potentiostat_nsteps=1,
     calculator=None,
 ):
+    """Run slow-growth constant-potential BOMD along a linear-combination bond CV.
+
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Starting structure; ignored when restarting from a trajectory.
+    cv_combo : list
+        Bond combination defining the collective variable, in the format
+        expected by `ase.constraints.FixInternals` bondcombos.
+    cv_ini, cv_fin : float
+        Initial and final value of the collective variable, in Angstrom.
+    grwoth_per_step : float
+        Increment added to the collective variable per block, in Angstrom.
+    timestep_fs : float
+        MD timestep in fs.
+    temperature_K : float
+        Langevin thermostat temperature in K.
+    nsteps : int
+        Maximum number of MD steps; the run also stops once `cv_fin` is passed.
+    friction : float
+        Langevin friction coefficient, in ASE units.
+    label : str
+        Run directory and prefix for the trajectory, log and database files.
+    pot_target : float
+        Target electrode potential vs. SHE, in V.
+    pot_ref : float
+        Absolute potential of the SHE reference, in V.
+    pot_step : float, optional
+        Potentiostat gain in |e|/V. Defaults to 0.002 * NELECT_neu.
+    potentiostat_nsteps : int
+        Number of MD steps between two potentiostat corrections and two CV
+        increments.
+    calculator : ase.calculators.vasp.Vasp
+        VASP calculator used for the forces and the VASPsol output.
+
+    Returns
+    -------
+    ase.Atoms
+        The structure at the end of the run.
+    """
     mycalc = calculator
     mycalc.set(directory=label, txt='vasp.out')
     print(f'VASP settings:\n{mycalc.todict()}')
 
-    # Read geometry if trajectory file exists
     restart_traj = False
     fn_traj = f'{label}.traj'
     try:
@@ -136,7 +205,6 @@ def langevin_fixpot_slowgrowth_combobond(
         geom_md.set_calculator(mycalc)
         print('Starting from input geometry...')
 
-    # Get charge state and set calculator
     if restart_traj and 'charge' in geom_md.calc.todict().keys():
         charge_now = geom_md.calc.todict()['charge']
         geom_md.set_calculator(mycalc)
@@ -153,7 +221,6 @@ def langevin_fixpot_slowgrowth_combobond(
             charge_now = 0
             print('Starting from zero net charge...')
 
-    # Read CV now if restart
     if restart_traj:
         try:
             cv_now = eval(open(f'{label}/cv_now.txt').read())
@@ -213,6 +280,3 @@ def langevin_fixpot_slowgrowth_combobond(
             nelect_net_new = nelect_net_now - (pot_target-pot_now)*pot_step
             geom_md.calc.set(charge=-nelect_net_new)
     return geom_md
-
-
-

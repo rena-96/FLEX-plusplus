@@ -1,4 +1,3 @@
-
 _initialized = False
 
 
@@ -24,4 +23,3 @@ def initialize_module():
 
 
 initialize_module()
-

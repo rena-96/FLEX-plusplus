@@ -1,40 +1,85 @@
-
-from ase.io import read, write, Trajectory
-from ase.db import connect
-from flexpp.utils import default_nelect_from_potcar
-from ase.parallel import world, parprint
-from ase import units 
-import numpy as np
 import os
 import time
 
+from ase.io import Trajectory, read, write
+from ase.parallel import parprint
+
+from flexpp.utils import default_nelect_from_potcar
+
+
 def extract_VASPsolpp(dirName='.', outcar='OUTCAR'):
+    """Read electron number, Fermi level and energy from a VASPsol++ OUTCAR.
+
+    VASPsol++ already reports a grand-canonical energy, so unlike the VASPsol
+    path no Fermi shift correction has to be applied afterwards. The last
+    occurrence of each quantity in the file is used.
+
+    Parameters
+    ----------
+    dirName : str
+        Directory of the finished VASP calculation.
+    outcar : str
+        Name of the OUTCAR file inside `dirName`.
+
+    Returns
+    -------
+    tuple of float
+        (nelect_now, pot_now, pot_0, e_gcdft): electrons in the cell in |e|,
+        the Fermi energy in eV, the reference Fermi energy EFERMI_ref in eV,
+        and the grand-canonical energy without entropy in eV.
+    """
     tmpHome = os.getcwd()
     os.chdir(dirName)
     with open(outcar) as f:
         lines = f.readlines()
-        nelect_now = float([l for l in lines if 'NELECT' in l][-1].split()[2]) 
-        pot_now = float([l for l in lines if 'Fermi energy' in l][-1].split()[2]) #@ renata, htis was the same as grepping the EFERMI from the opt
+        nelect_now = float([l for l in lines if 'NELECT' in l][-1].split()[2])
+        pot_now = float([l for l in lines if 'Fermi energy' in l][-1].split()[2])
         pot_0 = float([l for l in lines if 'EFERMI_ref' in l][-1].split()[2])
         e_gcdft = float([l for l in lines if 'energy  without entropy' in l][-1].split()[-1])
     parprint(nelect_now, pot_now, pot_0, e_gcdft)
     os.chdir(tmpHome)
     return nelect_now, pot_now, pot_0,  e_gcdft
 
+
 def get_GCDFT_pp(atoms, pot_ref=4.57, dirName='.', outcar='OUTCAR', nelect_neu=None):
+    """Grand-canonical analysis of a finished VASPsol++ calculation.
+
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Structure of the calculation, used to count the neutral electron
+        number when `nelect_neu` is not given.
+    pot_ref : float
+        Absolute potential of the reference electrode, in V. Currently unused,
+        the returned potential is on the VASPsol++ scale.
+    dirName : str
+        Directory of the finished VASP calculation.
+    outcar : str
+        Name of the OUTCAR file inside `dirName`.
+    nelect_neu : float, optional
+        Valence electrons of the neutral cell in |e|. Read from the POTCAR in
+        `dirName` when None.
+
+    Returns
+    -------
+    tuple of float
+        (nelect_net, u_she, e_gcdft): excess electrons in |e|, the electrode
+        potential in V, and the grand-canonical energy in eV.
+    """
     if nelect_neu is None:
         nelect_neu = default_nelect_from_potcar(atoms, dirName=dirName)
 
     nelect_now, pot_now, pot_0,  e_gcdft = extract_VASPsolpp(dirName, outcar)
     nelect_net = nelect_now - nelect_neu
-   
-    u_she = - ( pot_now )#- pot_0 ) # + u_ref
-    return nelect_net, u_she, e_gcdft #to modify to return the energy of the system in the end
+
+    u_she = - (pot_now)
+    return nelect_net, u_she, e_gcdft
+
 
 def get_bluemoon(filename="REPORT"):
     """
     Parses a single-frame REPORT file from VASP Blue Moon sampling.
-    
+
     Returns:
         Tuple of:
         (cv, lambda, |z|^(-1/2), GkT, |z|^(-1/2)*(lambda+GkT), T_inst)
@@ -57,6 +102,7 @@ def get_bluemoon(filename="REPORT"):
 
     return cv, lam, inv_sqrt_z, gkt, corrected_force, temp
 
+
 def slow_growth(
     atoms,
     nsteps = 10,
@@ -67,15 +113,43 @@ def slow_growth(
     capacitance_init = 1.,
     R = 100,
     temperature_K = 300,
-    continue_run=True   
+    continue_run=True
 ):
+    """Drive a VASPsol++ slow-growth run with a deterministic potentiostat.
+
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Structure of the run, used to count the neutral electron number and
+        written out as ini.vasp for reference.
+    nsteps : int
+        Number of VASP invocations, i.e. slow-growth steps.
+    pot_target : float
+        Target potential as an absolute value, in V.
+    pot_ref : float
+        Absolute potential of the reference electrode, in V.
+    pot_step : float, optional
+        Legacy proportional gain in |e|/V. Defaults to 0.002 * NELECT_neu and
+        is only reported, not used by the update.
+    timestep_fs : float
+        Timestep of the electron dynamics, in fs. Unused by the deterministic
+        update, kept for signature compatibility with the FDT drivers.
+    capacitance_init : float
+        Initial electrode capacitance in |e|/V, also the fallback value.
+    R : float
+        Circuit resistance, in fs*V/|e|. Unused by the deterministic update.
+    temperature_K : float
+        Temperature in K. Unused by the deterministic update.
+    continue_run : bool
+        Resume from the existing sg_det_pp.traj, skipping the steps already
+        stored there, instead of counting from zero.
+    """
     write('ini.vasp', atoms)
     nelect_neu = default_nelect_from_potcar(atoms)
     if pot_step is None:
         pot_step = 0.002 * nelect_neu
         parprint(f'Potentiostat step set to {pot_step:.6f} |e|/V (NELECT_neu={nelect_neu:8.3f} |e|)')
 
-    # initialize capacitance tracking
     capacitance = capacitance_init
     efermi_last = None
     nelect_net_last = None
@@ -85,14 +159,10 @@ def slow_growth(
         traj = Trajectory(traj_file, 'a')
         steps_completed = len(traj)
         parprint(f"Continuing from step {steps_completed}/{nsteps}")
-       # if os.path.exists('sg_det_pp.log'): #to change???
-        #    with open('sg_det_pp.log', 'r') as f:
-         #       lines = f.readlines()
-          #      capacitance = float(lines[-1].split()[-1].split('=')[-1])
     else:
         traj = Trajectory(traj_file, 'a')
         steps_completed = 0
-        parprint("Starting a new run") 
+        parprint("Starting a new run")
 
     for i in range(steps_completed, nsteps):
         os.system('$VASP_COMMAND > vasp.out')
@@ -103,19 +173,16 @@ def slow_growth(
 
         # update capacitance if potential has changed enough
         if efermi_last is not None and abs(pot_now - efermi_last) > 0.07:
-            capacitance = (nelect_net_now - nelect_net_last) / (pot_now - efermi_last) 
+            capacitance = (nelect_net_now - nelect_net_last) / (pot_now - efermi_last)
             if capacitance < 0:
                 capacitance = capacitance_init
             parprint(f'Updated capacitance: {capacitance:.6f}')
 
-        # store for next step for the capacitance also in case
         efermi_last = pot_now
         nelect_net_last = nelect_net_now
 
-        # det VASPsol++ update
         nelect_net_new = nelect_net_now + capacitance * (pot_now - pot_target)
 
-        # Blue moon ensemble data extraction
         os.system('cat REPORT >> bluemoon_det_pp.txt')
 
         cv, lam, inv_sqrt_z, gkt, constrained_force, temp = get_bluemoon()
@@ -129,7 +196,7 @@ def slow_growth(
                 time.sleep(1)
         if geom_fin is None:
             raise RuntimeError("Failed to read vasprun.xml after multiple attempts.")
-        
+
         traj.write(geom_fin)
         with open("sg_det_pp.log", "a") as f_log:
             if inv_sqrt_z:
@@ -146,7 +213,6 @@ def slow_growth(
                     f"fe_grad=N/A capacitance={capacitance:.4f}\n"
                 )
 
-        # write new NELECT to INCAR
         with open('INCAR') as f:
             incar = f.readlines()
         found = False
@@ -161,7 +227,3 @@ def slow_growth(
             f.writelines(incar)
 
         os.system('cp CONTCAR POSCAR')
-
-
-
-

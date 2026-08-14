@@ -1,14 +1,33 @@
-from ase.io import read, write, Trajectory
-from ase.db import connect
-from flexpp.utils import default_nelect_from_potcar
-from ase.parallel import world, parprint
-from ase import units
-import numpy as np
 import os
 import time
 
+from ase.io import Trajectory, read, write
+from ase.parallel import parprint
+
+from flexpp.utils import default_nelect_from_potcar
+
 
 def extract_VASPsolpp(dirName=".", outcar="OUTCAR"):
+    """Read electron number, Fermi level and energy from a VASPsol++ OUTCAR.
+
+    VASPsol++ already reports a grand-canonical energy, so unlike the VASPsol
+    path no Fermi shift correction has to be applied afterwards. The last
+    occurrence of each quantity in the file is used.
+
+    Parameters
+    ----------
+    dirName : str
+        Directory of the finished VASP calculation.
+    outcar : str
+        Name of the OUTCAR file inside `dirName`.
+
+    Returns
+    -------
+    tuple of float
+        (nelect_now, pot_now, pot_0, e_gcdft): electrons in the cell in |e|,
+        the Fermi energy in eV, the reference Fermi energy EFERMI_ref in eV,
+        and the grand-canonical energy without entropy in eV.
+    """
     tmpHome = os.getcwd()
     os.chdir(dirName)
     with open(outcar) as f:
@@ -16,7 +35,7 @@ def extract_VASPsolpp(dirName=".", outcar="OUTCAR"):
         nelect_now = float([l for l in lines if "NELECT" in l][-1].split()[2])
         pot_now = float(
             [l for l in lines if "Fermi energy" in l][-1].split()[2]
-        )  # @ renata, htis was the same as grepping the EFERMI from the opt
+        )
         pot_0 = float([l for l in lines if "EFERMI_ref" in l][-1].split()[2])
         e_gcdft = float(
             [l for l in lines if "energy  without entropy" in l][-1].split()[-1]
@@ -27,18 +46,42 @@ def extract_VASPsolpp(dirName=".", outcar="OUTCAR"):
 
 
 def get_GCDFT_pp(atoms, pot_ref=4.57, dirName=".", outcar="OUTCAR", nelect_neu=None):
+    """Grand-canonical analysis of a finished VASPsol++ calculation.
+
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Structure of the calculation, used to count the neutral electron
+        number when `nelect_neu` is not given.
+    pot_ref : float
+        Absolute potential of the reference electrode, in V. Currently unused,
+        the returned potential is on the VASPsol++ scale.
+    dirName : str
+        Directory of the finished VASP calculation.
+    outcar : str
+        Name of the OUTCAR file inside `dirName`.
+    nelect_neu : float, optional
+        Valence electrons of the neutral cell in |e|. Read from the POTCAR in
+        `dirName` when None.
+
+    Returns
+    -------
+    tuple of float
+        (nelect_net, u_she, e_gcdft): excess electrons in |e|, the electrode
+        potential in V, and the grand-canonical energy in eV.
+    """
     if nelect_neu is None:
         nelect_neu = default_nelect_from_potcar(atoms, dirName=dirName)
 
     nelect_now, pot_now, pot_0, e_gcdft = extract_VASPsolpp(dirName, outcar)
     nelect_net = nelect_now - nelect_neu
 
-    u_she = -(pot_now)  # - pot_0 ) # + u_ref
+    u_she = -(pot_now)
     return (
         nelect_net,
         u_she,
         e_gcdft,
-    )  # to modify to return the energy of the system in the end
+    )
 
 
 def get_bluemoon(filename="REPORT"):
@@ -76,9 +119,27 @@ def slow_growth(
     atoms,
     nsteps=10,
     pot_ref=-4.57,
-    pot_step=1.0,  # default just takes the diff btw potential and the target
+    pot_step=1.0,
     continue_run=True,
 ):
+    """Drive a VASPsol++ slow-growth run with a plain proportional potentiostat.
+
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Structure of the run, used to count the neutral electron number and
+        written out as ini.vasp for reference.
+    nsteps : int
+        Number of VASP invocations, i.e. slow-growth steps.
+    pot_ref : float
+        Reference/target Fermi energy, in eV, that the potentiostat drives to.
+    pot_step : float, optional
+        Potentiostat gain in |e|/V; the default of 1.0 simply applies the raw
+        potential difference. Falls back to 0.002 * NELECT_neu when None.
+    continue_run : bool
+        Resume from the existing sg_atoms_pp.traj, skipping the steps already
+        stored there, instead of counting from zero.
+    """
     write("ini.vasp", atoms)
     nelect_neu = default_nelect_from_potcar(atoms)
     if pot_step is None:
@@ -87,7 +148,6 @@ def slow_growth(
             f"Potentiostat step set to {pot_step:.6f} |e|/V (NELECT_neu={nelect_neu:8.3f} |e|)"
         )
     nelect_net_now = 0
-    # traj = Trajectory('sg_atoms.traj', 'a')
     traj_file = "sg_atoms_pp.traj"
     if os.path.exists(traj_file) and continue_run:
         traj = Trajectory(traj_file, "a")
@@ -99,13 +159,10 @@ def slow_growth(
         parprint("Starting a new run")
     for i in range(steps_completed, nsteps):
         os.system("$VASP_COMMAND > vasp.out")
-        # GCDFT data extraction
         nelect_net_now, pot_now, energy_gcdft_now = get_GCDFT_pp(
             atoms, pot_ref, dirName="."
         )
-        # check how to do it
-        nelect_net_new = nelect_net_now + (pot_ref - pot_now) * pot_step  # changed sign
-        # Blue moon ensemble data extraction
+        nelect_net_new = nelect_net_now + (pot_ref - pot_now) * pot_step
         os.system("cat REPORT >> bluemoon_pp.txt")
 
         cv, lam, inv_sqrt_z, gkt, constrained_force, temp = get_bluemoon()
@@ -114,7 +171,7 @@ def slow_growth(
         for attempt in range(5):
             try:
                 geom_fin = read("vasprun.xml")
-                break  # success!
+                break
             except Exception as e:
                 parprint(f"Read attempt {attempt+1} failed: {e}")
                 time.sleep(1)
@@ -136,11 +193,9 @@ def slow_growth(
                     f"efermi={pot_now:.3f} charge_net={-nelect_net_now:.3f} gcfe={energy_gcdft_now:.3f} "
                 )
 
-        # update the NELECT in INCAR (1st line)
         with open("INCAR") as f:
             incar = f.readlines()
 
-        # Replace NELECT line if found, else insert at top
         found = False
         for i, line in enumerate(incar):
             if line.strip().startswith("NELECT"):
