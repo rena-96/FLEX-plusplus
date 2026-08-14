@@ -2,11 +2,6 @@ _initialized = False
 
 
 def initialize_module():
-    """Print the FLEX++ banner, copyright and citation notice once per session.
-
-    Called at import time; the module-level `_initialized` flag makes repeated
-    calls no-ops so re-importing the package does not print the banner again.
-    """
     global _initialized
     if not _initialized:
         print("""
