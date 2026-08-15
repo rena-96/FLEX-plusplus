@@ -5,24 +5,9 @@ import numpy as np
 from ase.calculators.vasp import Vasp
 from ase.geometry import find_mic
 from ase.io import read
-
+from ase.parallel import parprint
 from flexpp.data import pp_dict
 
-
-def get_fmax(forces):
-    """Return the largest atomic force magnitude in an (N, 3) force array.
-
-    Parameters
-    ----------
-    forces : numpy.ndarray
-        Forces on the atoms, shape (natoms, 3), in eV/A.
-
-    Returns
-    -------
-    float
-        Maximum force norm over all atoms, in eV/A.
-    """
-    return np.sqrt((forces**2).sum(axis=1).max())
 
 
 def get_nelect_neu(poscar='POSCAR', potcar='POTCAR', dirName='.'):
@@ -183,42 +168,6 @@ def extract_VASPsol(dirName='.', outname='vasp.out'):
     return nelect_now, energy_dft, e_fermi, fermi_shift
 
 
-def old_get_GCDFT(u_ref=4.6, poscar='POSCAR', potcar='POTCAR', dirName='.', outname='vasp.out'):
-    """Grand-canonical analysis of a VASPsol run (legacy three-value version).
-
-    Parameters
-    ----------
-    u_ref : float
-        Absolute potential of the SHE reference, in V.
-    poscar, potcar : str
-        Structure and pseudopotential file names used to count the neutral
-        electron number.
-    dirName : str
-        Directory of the finished VASP calculation.
-    outname : str
-        Name of the VASP stdout file.
-
-    Returns
-    -------
-    tuple of float
-        (nelect_net, u_she, energy_gcdft): excess electrons in |e|, the
-        electrode potential vs. SHE in V, and the grand-canonical energy in eV.
-    """
-
-    try:
-        nelect_now, energy_dft, e_fermi, fermi_shift = extract_VASPsol(dirName, outname)
-    except Exception as e:
-        print(f"Warning: Failed to read OUTCAR, retrying in 5 seconds...\nError: {e}")
-        time.sleep(5)
-        nelect_now, energy_dft, e_fermi, fermi_shift = extract_VASPsol(dirName, outname)
-    nelect_neu = get_nelect_neu(poscar, potcar, dirName)
-    nelect_net = nelect_now - nelect_neu
-    work_function = - e_fermi - fermi_shift
-    u_she = work_function - u_ref
-    energy_gcdft = energy_dft + nelect_net * work_function
-    return nelect_net, u_she,  energy_gcdft
-
-
 def get_GCDFT(u_ref=4.6, poscar='POSCAR', potcar='POTCAR', dirName='.', outname='vasp.out'):
     """Grand-canonical analysis of a finished VASPsol calculation.
 
@@ -262,60 +211,6 @@ def get_GCDFT(u_ref=4.6, poscar='POSCAR', potcar='POTCAR', dirName='.', outname=
     return nelect_net, u_she, fermi_shift, energy_gcdft
 
 
-def get_rmsd(s, s_ref, list_ind=None):
-    """Root-mean-square displacement between two structures.
-
-    Displacements are wrapped with the minimum-image convention when the
-    structure carries a cell and periodic boundary conditions.
-
-    Parameters
-    ----------
-    s, s_ref : ase.Atoms
-        Structure and reference structure, with matching atom ordering.
-    list_ind : list of int, optional
-        Restrict the comparison to these atom indices; all atoms if None.
-
-    Returns
-    -------
-    float
-        RMSD in Angstrom.
-    """
-    if list_ind is not None:
-        tmp = s.positions[list_ind] - s_ref.positions[list_ind]
-    else:
-        tmp = s.positions - s_ref.positions
-    if s.cell is not None and s.pbc is not None:
-        tmp, _ = find_mic(tmp, s.cell, s.pbc)
-    tmp **= 2
-    return np.sqrt(tmp.sum(axis=1).mean())
-
-
-def get_rssd(s, s_ref, list_ind=None):
-    """Root-sum-square displacement between two structures.
-
-    Same as `get_rmsd` but summed over atoms instead of averaged, so the value
-    grows with system size.
-
-    Parameters
-    ----------
-    s, s_ref : ase.Atoms
-        Structure and reference structure, with matching atom ordering.
-    list_ind : list of int, optional
-        Restrict the comparison to these atom indices; all atoms if None.
-
-    Returns
-    -------
-    float
-        RSSD in Angstrom.
-    """
-    if list_ind is not None:
-        tmp = s.positions[list_ind] - s_ref.positions[list_ind]
-    else:
-        tmp = s.positions - s_ref.positions
-    if s.cell is not None and s.pbc is not None:
-        tmp, _ = find_mic(tmp, s.cell, s.pbc)
-    tmp **= 2
-    return np.sqrt(tmp.sum(axis=1).sum())
 
 
 def read_potcar_numbers_of_electrons(dirName='.', file_or_filename='POTCAR'):
@@ -403,3 +298,101 @@ def default_nelect_from_potcar(atoms, dirName='.', potcar='POTCAR'):
         default_nelect += count * valence
 
     return default_nelect
+
+
+
+def extract_VASPsolpp(dirName='.', outcar='OUTCAR'):
+    """Read electron number, Fermi level and energy from a VASPsol++ OUTCAR.
+
+    VASPsol++ already reports a grand-canonical energy, so unlike the VASPsol
+    path no Fermi shift correction has to be applied afterwards. The last
+    occurrence of each quantity in the file is used.
+
+    Parameters
+    ----------
+    dirName : str
+        Directory of the finished VASP calculation.
+    outcar : str
+        Name of the OUTCAR file inside `dirName`.
+
+    Returns
+    -------
+    tuple of float
+        (nelect_now, pot_now, pot_0, e_gcdft): electrons in the cell in |e|,
+        the Fermi energy in eV, the reference Fermi energy EFERMI_ref in eV,
+        and the grand-canonical energy without entropy in eV.
+    """
+    tmpHome = os.getcwd()
+    os.chdir(dirName)
+    with open(outcar) as f:
+        lines = f.readlines()
+        nelect_now = float([l for l in lines if 'NELECT' in l][-1].split()[2])
+        pot_now = float([l for l in lines if 'Fermi energy' in l][-1].split()[2]) 
+        pot_0 = float([l for l in lines if 'EFERMI_ref' in l][-1].split()[2])
+        e_gcdft = float([l for l in lines if 'energy  without entropy' in l][-1].split()[-1])
+    parprint(nelect_now, pot_now, pot_0, e_gcdft)
+    os.chdir(tmpHome)
+    return nelect_now, pot_now, pot_0,  e_gcdft
+
+
+def get_GCDFT_pp(atoms, pot_ref=4.07, dirName='.', outcar='OUTCAR', nelect_neu=None):
+    """Grand-canonical analysis of a finished VASPsol++ calculation.
+
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Structure of the calculation, used to count the neutral electron
+        number when `nelect_neu` is not given.
+    pot_ref : float
+        Absolute potential of the reference electrode, in V. Currently unused,
+        the returned potential is on the VASPsol++ scale.
+    dirName : str
+        Directory of the finished VASP calculation.
+    outcar : str
+        Name of the OUTCAR file inside `dirName`.
+    nelect_neu : float, optional
+        Valence electrons of the neutral cell in |e|. Read from the POTCAR in
+        `dirName` when None.
+
+    Returns
+    -------
+    tuple of float
+        (nelect_net, u_she, e_gcdft): excess electrons in |e|, the electrode
+        potential in V, and the grand-canonical energy in eV.
+    """
+    if nelect_neu is None:
+        nelect_neu = default_nelect_from_potcar(atoms, dirName=dirName)
+
+    nelect_now, pot_now, pot_0,  e_gcdft = extract_VASPsolpp(dirName, outcar)
+    nelect_net = nelect_now - nelect_neu
+
+    u_she = - (pot_now)
+    return nelect_net, u_she, e_gcdft
+
+
+def get_bluemoon(filename="REPORT"):
+    """
+    Parses a single-frame REPORT file from VASP Blue Moon sampling.
+
+    Returns:
+        Tuple of:
+        (cv, lambda, |z|^(-1/2), GkT, |z|^(-1/2)*(lambda+GkT), T_inst)
+    """
+    cv = lam = inv_sqrt_z = gkt = corrected_force = temp = None
+
+    with open(filename, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("cc> S") or line.startswith("cc> R") or line.startswith("cc> D"):
+                cv = float(line.split()[2])
+            elif line.startswith("b_m>"):
+                parts = line.split()
+                lam = float(parts[1])
+                inv_sqrt_z = float(parts[2])
+                gkt = float(parts[3])
+                corrected_force = float(parts[4])
+            elif line.startswith("tmprt>"):
+                temp = float(line.split()[2])
+
+    return cv, lam, inv_sqrt_z, gkt, corrected_force, temp
+

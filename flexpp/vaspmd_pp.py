@@ -4,121 +4,13 @@ import time
 from ase.io import Trajectory, read, write
 from ase.parallel import parprint
 
-from flexpp.utils import default_nelect_from_potcar
-
-
-def extract_VASPsolpp(dirName=".", outcar="OUTCAR"):
-    """Read electron number, Fermi level and energy from a VASPsol++ OUTCAR.
-
-    VASPsol++ already reports a grand-canonical energy, so unlike the VASPsol
-    path no Fermi shift correction has to be applied afterwards. The last
-    occurrence of each quantity in the file is used.
-
-    Parameters
-    ----------
-    dirName : str
-        Directory of the finished VASP calculation.
-    outcar : str
-        Name of the OUTCAR file inside `dirName`.
-
-    Returns
-    -------
-    tuple of float
-        (nelect_now, pot_now, pot_0, e_gcdft): electrons in the cell in |e|,
-        the Fermi energy in eV, the reference Fermi energy EFERMI_ref in eV,
-        and the grand-canonical energy without entropy in eV.
-    """
-    tmpHome = os.getcwd()
-    os.chdir(dirName)
-    with open(outcar) as f:
-        lines = f.readlines()
-        nelect_now = float([l for l in lines if "NELECT" in l][-1].split()[2])
-        pot_now = float(
-            [l for l in lines if "Fermi energy" in l][-1].split()[2]
-        )
-        pot_0 = float([l for l in lines if "EFERMI_ref" in l][-1].split()[2])
-        e_gcdft = float(
-            [l for l in lines if "energy  without entropy" in l][-1].split()[-1]
-        )
-    parprint(nelect_now, pot_now, pot_0, e_gcdft)
-    os.chdir(tmpHome)
-    return nelect_now, pot_now, pot_0, e_gcdft
-
-
-def get_GCDFT_pp(atoms, pot_ref=4.57, dirName=".", outcar="OUTCAR", nelect_neu=None):
-    """Grand-canonical analysis of a finished VASPsol++ calculation.
-
-    Parameters
-    ----------
-    atoms : ase.Atoms
-        Structure of the calculation, used to count the neutral electron
-        number when `nelect_neu` is not given.
-    pot_ref : float
-        Absolute potential of the reference electrode, in V. Currently unused,
-        the returned potential is on the VASPsol++ scale.
-    dirName : str
-        Directory of the finished VASP calculation.
-    outcar : str
-        Name of the OUTCAR file inside `dirName`.
-    nelect_neu : float, optional
-        Valence electrons of the neutral cell in |e|. Read from the POTCAR in
-        `dirName` when None.
-
-    Returns
-    -------
-    tuple of float
-        (nelect_net, u_she, e_gcdft): excess electrons in |e|, the electrode
-        potential in V, and the grand-canonical energy in eV.
-    """
-    if nelect_neu is None:
-        nelect_neu = default_nelect_from_potcar(atoms, dirName=dirName)
-
-    nelect_now, pot_now, pot_0, e_gcdft = extract_VASPsolpp(dirName, outcar)
-    nelect_net = nelect_now - nelect_neu
-
-    u_she = -(pot_now)
-    return (
-        nelect_net,
-        u_she,
-        e_gcdft,
-    )
-
-
-def get_bluemoon(filename="REPORT"):
-    """
-    Parses a single-frame REPORT file from VASP Blue Moon sampling.
-
-    Returns:
-        Tuple of:
-        (cv, lambda, |z|^(-1/2), GkT, |z|^(-1/2)*(lambda+GkT), T_inst)
-    """
-    cv = lam = inv_sqrt_z = gkt = corrected_force = temp = None
-
-    with open(filename, "r") as f:
-        for line in f:
-            line = line.strip()
-            if (
-                line.startswith("cc> S")
-                or line.startswith("cc> R")
-                or line.startswith("cc> D")
-            ):
-                cv = float(line.split()[2])
-            elif line.startswith("b_m>"):
-                parts = line.split()
-                lam = float(parts[1])
-                inv_sqrt_z = float(parts[2])
-                gkt = float(parts[3])
-                corrected_force = float(parts[4])
-            elif line.startswith("tmprt>"):
-                temp = float(line.split()[2])
-
-    return cv, lam, inv_sqrt_z, gkt, corrected_force, temp
+from flexpp.utils import default_nelect_from_potcar, extract_VASPsolpp, get_GCDFT_pp, get_bluemoon
 
 
 def slow_growth(
     atoms,
     nsteps=10,
-    pot_ref=-4.57,
+    pot_ref=-4.07,
     pot_step=1.0,
     continue_run=True,
 ):
@@ -189,7 +81,7 @@ def slow_growth(
             else:
                 parprint(i, cv, lam, temp)
                 f_log.write(
-                    f"[Step {i+1}] cv={cv:.4f} λ={lam:.3e} |z|^(-1/2)=N/A T={temp:.1f}K "
+                    f"\n [Step {i+1}] cv={cv:.4f} λ={lam:.3e} |z|^(-1/2)=N/A T={temp:.1f}K "
                     f"efermi={pot_now:.3f} charge_net={-nelect_net_now:.3f} gcfe={energy_gcdft_now:.3f} "
                 )
 

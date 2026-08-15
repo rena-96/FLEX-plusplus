@@ -5,45 +5,15 @@ from ase import units
 from ase.io import Trajectory, read, write
 from ase.parallel import world
 
-from flexpp.utils import get_GCDFT, get_nelect_neu_pp
+from flexpp.utils import get_GCDFT, get_nelect_neu_pp,  get_bluemoon
 
-
-def get_bluemoon(filename="REPORT"):
-    """
-    Parses a single-frame REPORT file from VASP Blue Moon sampling.
-
-    Returns:
-        Tuple of:
-        (cv, lambda, |z|^(-1/2), GkT, |z|^(-1/2)*(lambda+GkT), T_inst)
-    """
-    cv = lam = inv_sqrt_z = gkt = corrected_force = temp = None
-
-    with open(filename, "r") as f:
-        for line in f:
-            line = line.strip()
-            if (
-                line.startswith("cc> S")
-                or line.startswith("cc> R")
-                or line.startswith("cc> D")
-            ):
-                cv = float(line.split()[2])
-            elif line.startswith("b_m>"):
-                parts = line.split()
-                lam = float(parts[1])
-                inv_sqrt_z = float(parts[2])
-                gkt = float(parts[3])
-                corrected_force = float(parts[4])
-            elif line.startswith("tmprt>"):
-                temp = float(line.split()[2])
-
-    return cv, lam, inv_sqrt_z, gkt, corrected_force, temp
 
 
 def slow_growth(
     atoms,
     nsteps=10,
     pot_target=0.0,
-    pot_ref=4.6,
+    pot_ref=4.07,
     pot_step=None,
     timestep_fs=1.0,
     capacitance=1.0,

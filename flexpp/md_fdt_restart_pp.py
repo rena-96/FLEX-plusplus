@@ -7,76 +7,8 @@ from ase.io import Trajectory, read
 from ase.md.langevin import Langevin
 from ase.parallel import parprint, world
 
-from flexpp.utils import default_nelect_from_potcar, get_nelect_incar, get_nelect_neu_pp
+from flexpp.utils import get_GCDFT, get_nelect_incar, get_nelect_neu_pp, extract_VASPsolpp, get_GCDFT_pp
 
-
-def extract_VASPsolpp(dirName='.', outcar='OUTCAR'):
-    """Read electron number, Fermi level and energy from a VASPsol++ OUTCAR.
-
-    VASPsol++ already reports a grand-canonical energy, so unlike the VASPsol
-    path no Fermi shift correction has to be applied afterwards. The last
-    occurrence of each quantity in the file is used.
-
-    Parameters
-    ----------
-    dirName : str
-        Directory of the finished VASP calculation.
-    outcar : str
-        Name of the OUTCAR file inside `dirName`.
-
-    Returns
-    -------
-    tuple of float
-        (nelect_now, pot_now, pot_0, e_gcdft): electrons in the cell in |e|,
-        the Fermi energy in eV, the reference Fermi energy EFERMI_ref in eV,
-        and the grand-canonical energy without entropy in eV.
-    """
-    tmpHome = os.getcwd()
-    os.chdir(dirName)
-    with open(outcar) as f:
-        lines = f.readlines()
-        nelect_now = float([l for l in lines if 'NELECT' in l][-1].split()[2])
-        pot_now = float([l for l in lines if 'Fermi energy' in l][-1].split()[2]) #@ renata, htis was the same as grepping the EFERMI from the opt
-        pot_0 = float([l for l in lines if 'EFERMI_ref' in l][-1].split()[2])
-        e_gcdft = float([l for l in lines if 'energy  without entropy' in l][-1].split()[-1])
-    parprint(nelect_now, pot_now, pot_0, e_gcdft)
-    os.chdir(tmpHome)
-    return nelect_now, pot_now, pot_0,  e_gcdft
-
-
-def get_GCDFT_pp(atoms, pot_ref=4.57, dirName='.', outcar='OUTCAR', nelect_neu=None):
-    """Grand-canonical analysis of a finished VASPsol++ calculation.
-
-    Parameters
-    ----------
-    atoms : ase.Atoms
-        Structure of the calculation, used to count the neutral electron
-        number when `nelect_neu` is not given.
-    pot_ref : float
-        Absolute potential of the reference electrode, in V. Currently unused,
-        the returned potential is on the VASPsol++ scale.
-    dirName : str
-        Directory of the finished VASP calculation.
-    outcar : str
-        Name of the OUTCAR file inside `dirName`.
-    nelect_neu : float, optional
-        Valence electrons of the neutral cell in |e|. Read from the POTCAR in
-        `dirName` when None.
-
-    Returns
-    -------
-    tuple of float
-        (nelect_net, u_she, e_gcdft): excess electrons in |e|, the electrode
-        potential in V, and the grand-canonical energy in eV.
-    """
-    if nelect_neu is None:
-        nelect_neu = default_nelect_from_potcar(atoms, dirName=dirName)
-
-    nelect_now, pot_now, pot_0,  e_gcdft = extract_VASPsolpp(dirName, outcar)
-    nelect_net = nelect_now - nelect_neu
-
-    u_she = - (pot_now)
-    return nelect_net, u_she, e_gcdft
 
 
 def langevin_fdt(
@@ -87,9 +19,8 @@ def langevin_fdt(
     friction=0.1,
     label='',
     pot_target=0.0,
-    pot_ref=4.6,
-    pot_step=None,
-    potentiostat_nsteps=10,
+    pot_ref=4.07,
+    potentiostat_nsteps=2,
     calculator=None,
     capacitance=1.,
     R=50.,
@@ -115,8 +46,6 @@ def langevin_fdt(
         Target electrode potential, in V.
     pot_ref : float
         Absolute potential of the reference electrode, in V.
-    pot_step : float, optional
-        Legacy proportional gain in |e|/V; only used for the printed report.
     potentiostat_nsteps : int
         Number of MD steps between two charge updates.
     calculator : ase.calculators.vasp.Vasp
@@ -178,9 +107,7 @@ def langevin_fdt(
     )
 
     print(f'\nFDT POTENTIAL BOMD (pot_target= {pot_target}, timestep={timestep_fs} fs, potentiostat per {potentiostat_nsteps} fs)')
-    if pot_step is None:
-        pot_step = 0.002 * nelect_neu
-        print(f'Potentiostat step set to {pot_step:.6f} |e|/V (NELECT_neu={nelect_neu:8.3f} |e|)')
+    print(f'and  (NELECT_neu={nelect_neu:8.3f} |e|)')
 
     geom_md.calc.set(charge=charge_now)
     traj_nelect = []

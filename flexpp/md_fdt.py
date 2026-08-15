@@ -1,6 +1,5 @@
 import numpy as np
 from ase import units
-from ase.constraints import FixInternals
 from ase.db import connect
 from ase.io import read
 from ase.md.langevin import Langevin
@@ -17,8 +16,7 @@ def langevin_fdt(
     friction=0.1,
     label='',
     pot_target=0.0,
-    pot_ref=4.6,
-    pot_step=None,
+    pot_ref=4.44, #she
     potentiostat_nsteps=10,
     calculator=None,
     capacitance =1.,
@@ -45,8 +43,6 @@ def langevin_fdt(
         Target electrode potential vs. SHE, in V.
     pot_ref : float
         Absolute potential of the SHE reference, in V.
-    pot_step : float, optional
-        Legacy proportional gain in |e|/V; only used for the printed report.
     potentiostat_nsteps : int
         Number of MD steps between two charge updates.
     calculator : ase.calculators.vasp.Vasp
@@ -81,7 +77,7 @@ def langevin_fdt(
     if restart_traj and 'charge' in geom_md.calc.todict().keys():
         charge_now = geom_md.calc.todict()['charge']
         geom_md.set_calculator(mycalc)
-        nelect_neu = get_nelect_neu_pp(geom_md)
+        nelect_neu = get_nelect_neu_pp(geom_md) #to check with vaspsol!
         print(f'Charge state read from trajectory: {charge_now:.4f} |e|')
     else:
         geom_md.set_calculator(mycalc)
@@ -103,10 +99,8 @@ def langevin_fdt(
         trajectory=f'{label}.traj',
     )
 
-    print(f'\nFDT POTENTIAL BOMD (pot_target= {pot_target}, timestep={timestep_fs} fs, potentialstat per {potentiostat_nsteps} fs)')
-    if pot_step is None:
-        pot_step = 0.002 * nelect_neu
-        print(f'Potentiostat step set to {pot_step:.6f} |e|/V (NELECT_neu={nelect_neu:8.3f} |e|)')
+    print(f'\nFDT POTENTIAL BOMD (pot_target= {pot_target}, timestep={timestep_fs} fs, potentiostat per {potentiostat_nsteps} fs)')
+    print(f'and  (NELECT_neu={nelect_neu:8.3f} |e|)')
 
     geom_md.calc.set(charge=charge_now)
     traj_nelect = []
@@ -152,172 +146,3 @@ def langevin_fdt(
     return geom_md
 
 
-def langevin_fdt_slowgrowth_combobond(
-    atoms=None,
-    cv_combo = None,
-    cv_ini = None,
-    cv_fin = None,
-    grwoth_per_step = 0.0001,
-    timestep_fs=1,
-    temperature_K=300,
-    nsteps = 10000,
-    friction=0.1,
-    label='',
-    pot_target=0.0,
-    pot_ref=4.6,
-    pot_step=None,
-    potentiostat_nsteps=1,
-    calculator=None,
-    capacitance =1.,
-    R = 50.
-):
-    """Run slow-growth BOMD with an FDT electron thermostat along a bond CV.
-
-    Combines the charge dynamics of `langevin_fdt` with a slowly growing
-    collective variable: the bond combination `cv_combo` is constrained with
-    `FixInternals` and its target advanced by `grwoth_per_step` after every
-    block, from `cv_ini` up to `cv_fin`. The current CV value is written to
-    `<label>/cv_now.txt` for restarts and stored with each database frame.
-
-    Parameters
-    ----------
-    atoms : ase.Atoms
-        Starting structure; ignored when restarting from a trajectory.
-    cv_combo : list
-        Bond combination defining the collective variable, in the format
-        expected by `ase.constraints.FixInternals` bondcombos.
-    cv_ini, cv_fin : float
-        Initial and final value of the collective variable, in Angstrom.
-    grwoth_per_step : float
-        Increment added to the collective variable per block, in Angstrom.
-    timestep_fs : float
-        MD timestep in fs, also used as the electron-dynamics timestep.
-    temperature_K : float
-        Temperature in K, of both the thermostat and the charge fluctuations.
-    nsteps : int
-        Maximum number of MD steps; the run also stops once `cv_fin` is passed.
-    friction : float
-        Langevin friction coefficient, in ASE units.
-    label : str
-        Run directory and prefix for the trajectory, log and database files.
-    pot_target : float
-        Target electrode potential vs. SHE, in V.
-    pot_ref : float
-        Absolute potential of the SHE reference, in V.
-    pot_step : float, optional
-        Legacy proportional gain in |e|/V; only used for the printed report.
-    potentiostat_nsteps : int
-        Number of MD steps between two charge updates and two CV increments.
-    calculator : ase.calculators.vasp.Vasp
-        VASP calculator used for the forces and the VASPsol output.
-    capacitance : float
-        Electrode capacitance C, in |e|/V.
-    R : float
-        Circuit resistance, in fs*V/|e|, setting the relaxation time R*C.
-
-    Returns
-    -------
-    ase.Atoms
-        The structure at the end of the run.
-    """
-    mycalc = calculator
-    mycalc.set(directory=label, txt='vasp.out')
-    print(f'VASP settings:\n{mycalc.todict()}')
-
-    restart_traj = False
-    fn_traj = f'{label}.traj'
-    try:
-        geom_md = read(fn_traj)
-        print(f'Reading geometry from {fn_traj}...')
-        restart_traj = True
-    except:
-        geom_md = atoms.copy()
-        geom_md.set_calculator(mycalc)
-        print('Starting from input geometry...')
-
-    if restart_traj and 'charge' in geom_md.calc.todict().keys():
-        charge_now = geom_md.calc.todict()['charge']
-        geom_md.set_calculator(mycalc)
-        nelect_neu = get_nelect_neu_pp(geom_md)
-        print(f'Charge state read from trajectory: {charge_now:.4f} |e|')
-    else:
-        geom_md.set_calculator(mycalc)
-        nelect_neu = get_nelect_neu_pp(geom_md)
-        try:
-            nelect_now = get_nelect_incar(label)
-            charge_now = nelect_neu-nelect_now
-            print(f'Charge state read from last INCAR: {charge_now:.4f} |e|')
-        except:
-            charge_now = 0
-            print('Starting from zero net charge...')
-
-    if restart_traj:
-        try:
-            cv_now = eval(open(f'{label}/cv_now.txt').read())
-        except:
-            cv_now = None
-
-    dyn = Langevin(
-        atoms=geom_md,
-        timestep=timestep_fs * units.fs,
-        temperature_K=temperature_K,
-        friction=friction,
-        logfile=f'{label}.log',
-        trajectory=f'{label}.traj',
-    )
-
-    print(f'\nFDT AIMD (pot_target= {pot_target}, timestep={timestep_fs} fs, potentialstat per {potentiostat_nsteps} fs)')
-    if pot_step is None:
-        pot_step = 0.002 * nelect_neu
-        print(f'Potentiostat step set to {pot_step:.6f} |e|/V (NELECT_neu={nelect_neu:8.3f} |e|)')
-
-    geom_md.calc.set(charge=charge_now)
-    traj_nelect = []
-    traj_pot = []
-    traj_gcfe = []
-    nsteps_done = 0
-    if cv_now is not None:
-        cv_now = cv_init
-    while nsteps_done < nsteps and cv_now <= cv_fin:
-        geom_md.set_constraint(
-            FixInternals(bondcombos=[cv_now, cv_combo])
-            )
-        dyn.run(potentiostat_nsteps)
-        cv_now += grwoth_per_step
-        nsteps_done += potentiostat_nsteps
-        nelect_net_now, pot_now, energy_gcdft_now = get_GCDFT(pot_ref, dirName=label)
-        traj_nelect.append(nelect_net_now)
-        traj_pot.append(pot_now)
-        traj_gcfe.append(energy_gcdft_now)
-        np.savetxt(f'{label}/log_nelect.txt', np.array(traj_nelect))
-        np.savetxt(f'{label}/log_potential.txt', np.array(traj_pot))
-        np.savetxt(f'{label}/log_gcfe.txt', np.array(traj_gcfe))
-        np.savetxt(f'{label}/cv_now.txt', cv_now - grwoth_per_step)
-        print(f'Step {len(traj_nelect):4}: NELECT_net= {traj_nelect[-1]:8.4f} |e|;  U_she= {traj_pot[-1]:8.4f} V; GCFE_el= {traj_gcfe[-1]:12.4f} eV')
-        with connect(f'{label}_traj.db', append=True) as db:
-            db.write(
-                geom_md,
-                charge_net=-traj_nelect[-1],
-                nelect_net = traj_nelect[-1],
-                pot=traj_pot[-1],
-                gcfe=traj_gcfe[-1],
-                potene=geom_md.get_potential_energy(),
-                cv=cv_now - grwoth_per_step,
-            )
-        if nsteps_done >= nsteps:
-            break
-        else:
-            rn = np.zeros(1)
-            if world.rank == 0:
-                rn[0] = np.random.standard_normal()
-            world.broadcast(rn, 0)
-            nelect_net_new = (
-                nelect_net_now  # change sign
-                + capacitance * (pot_now - pot_target)
-                * (1 - np.exp(-timestep_fs / (R*capacitance)))
-                + rn[0] * np.sqrt(
-                    units.kB * temperature_K * capacitance
-                    * (1 - np.exp(-2 * timestep_fs / (R*capacitance))))
-            )
-            geom_md.calc.set(charge=-nelect_net_new)
-    return geom_md
