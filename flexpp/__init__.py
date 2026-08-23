@@ -18,6 +18,7 @@ def initialize_module():
         print('      This version of the software was developed by')
         print('      Renata Sechi, Ph.D., and Ronan Gleeson, Msc.')
         print('      Please cite: Chemrxiv  ')
+        print('      Built on EChO, JACS, 2024, 146, 14, 9623–9630')
 
         _initialized = True
 

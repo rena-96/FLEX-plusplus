@@ -10,7 +10,7 @@ from flexpp.data import pp_dict
 
 
 
-def get_nelect_neu(poscar='POSCAR', potcar='POTCAR', dirName='.'):
+def count_valence_nelect(poscar='POSCAR', potcar='POTCAR', dirName='.'):
     """Count the valence electrons of the charge-neutral cell from VASP input files.
 
     The valence charges (ZVAL) are taken from the POTCAR and matched to the
@@ -39,7 +39,7 @@ def get_nelect_neu(poscar='POSCAR', potcar='POTCAR', dirName='.'):
     return sum([zval_list[elem_list.index(a)] for a in atom_list])
 
 
-def get_nelect_neu_ase(atoms):
+def get_valence_nelect_ase(atoms):
     """Count the valence electrons of the neutral cell using the attached VASP calculator.
 
     Parameters
@@ -56,7 +56,7 @@ def get_nelect_neu_ase(atoms):
     calc_tmp.fromdict(atoms.calc.todict())
     calc_tmp.set(directory='.', charge=0)
     calc_tmp.write_input(atoms)
-    nelect_neu = get_nelect_neu()
+    nelect_neu = count_valence_nelect()
     for f in ['POSCAR', 'POTCAR', 'INCAR', 'KPOINTS', 'ase-sort.dat']:
         os.remove(f)
     return nelect_neu
@@ -96,7 +96,7 @@ def get_nelect_dict_pp(atoms, setting='recommended', pp_dir='potpaw_PBE'):
     return nelect_dict
 
 
-def get_nelect_neu_pp(atoms, setting='recommended', pp_dir='potpaw_PBE'):
+def count_valence_nelect_pp(atoms, setting='recommended', pp_dir='potpaw_PBE'):
     """Sum the valence electrons of the neutral cell from the pseudopotential library.
 
     Parameters
@@ -121,7 +121,7 @@ def get_nelect_neu_pp(atoms, setting='recommended', pp_dir='potpaw_PBE'):
     return nelect_neu
 
 
-def get_nelect_incar(workdir):
+def count_nelect_incar(workdir):
     """Read the NELECT value set in the INCAR of a run directory.
 
     Parameters
@@ -168,7 +168,7 @@ def extract_VASPsol(dirName='.', outname='vasp.out'):
     return nelect_now, energy_dft, e_fermi, fermi_shift
 
 
-def get_GCDFT(u_ref=4.6, poscar='POSCAR', potcar='POTCAR', dirName='.', outname='vasp.out'):
+def fetch_GCDFT(u_ref=4.6, poscar='POSCAR', potcar='POTCAR', dirName='.', outname='vasp.out'):
     """Grand-canonical analysis of a finished VASPsol calculation.
 
     The work function is obtained as -(E_fermi + fermi_shift), the potential
@@ -203,7 +203,7 @@ def get_GCDFT(u_ref=4.6, poscar='POSCAR', potcar='POTCAR', dirName='.', outname=
         print(f"Warning: Failed to read OUTCAR, retrying in 5 seconds...\nError: {e}")
         time.sleep(5)
         nelect_now, energy_dft, e_fermi, fermi_shift = extract_VASPsol(dirName, outname)
-    nelect_neu = get_nelect_neu(poscar, potcar, dirName)
+    nelect_neu = count_valence_nelect(poscar, potcar, dirName)
     nelect_net = nelect_now - nelect_neu
     work_function = - e_fermi - fermi_shift
     u_she = work_function - u_ref
@@ -335,7 +335,7 @@ def extract_VASPsolpp(dirName='.', outcar='OUTCAR'):
     return nelect_now, pot_now, pot_0,  e_gcdft
 
 
-def get_GCDFT_pp(atoms, pot_ref=4.07, dirName='.', outcar='OUTCAR', nelect_neu=None):
+def fetch_GCDFT_pp(atoms, pot_ref=4.07, dirName='.', outcar='OUTCAR', nelect_neu=None):
     """Grand-canonical analysis of a finished VASPsol++ calculation.
 
     Parameters

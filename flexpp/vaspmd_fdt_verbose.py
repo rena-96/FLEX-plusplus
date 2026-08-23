@@ -5,7 +5,7 @@ from ase import units
 from ase.io import Trajectory, read, write
 from ase.parallel import world
 
-from flexpp.utils import get_GCDFT, get_nelect_neu_pp, extract_VASPsolpp, get_GCDFT_pp, get_bluemoon
+from flexpp.utils import fetch_GCDFT, count_valence_nelect_pp, extract_VASPsolpp, fetch_GCDFT_pp, get_bluemoon
 
 
 def slow_growth(
@@ -49,7 +49,7 @@ def slow_growth(
         stored there, instead of counting from zero.
     """
     write("ini.vasp", atoms)
-    nelect_neu = get_nelect_neu_pp(atoms)
+    nelect_neu = count_valence_nelect_pp(atoms)
     if pot_step is None:
         pot_step = 0.002 * nelect_neu
         print(
@@ -67,7 +67,7 @@ def slow_growth(
         print("Starting a new run")
     for i in range(steps_completed, nsteps):
         os.system("$VASP_COMMAND > vasp.out")
-        nelect_net_now, pot_now, fermi_shift, energy_gcdft_now = get_GCDFT(
+        nelect_net_now, pot_now, fermi_shift, energy_gcdft_now = fetch_GCDFT(
             pot_ref, dirName="."
         )
         rn = np.zeros(1)

@@ -4,7 +4,7 @@ import time
 from ase.io import Trajectory, read, write
 from ase.parallel import parprint
 
-from flexpp.utils import default_nelect_from_potcar, extract_VASPsolpp, get_GCDFT_pp, get_bluemoon
+from flexpp.utils import default_nelect_from_potcar, extract_VASPsolpp, fetch_GCDFT_pp, get_bluemoon
 
 
 def slow_growth(
@@ -51,7 +51,7 @@ def slow_growth(
         parprint("Starting a new run")
     for i in range(steps_completed, nsteps):
         os.system("$VASP_COMMAND > vasp.out")
-        nelect_net_now, pot_now, energy_gcdft_now = get_GCDFT_pp(
+        nelect_net_now, pot_now, energy_gcdft_now = fetch_GCDFT_pp(
             atoms, pot_ref, dirName="."
         )
         nelect_net_new = nelect_net_now + (pot_ref - pot_now) * pot_step

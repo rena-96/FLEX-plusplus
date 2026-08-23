@@ -5,7 +5,7 @@ from ase.io import read
 from ase.md.langevin import Langevin
 from ase.parallel import world
 
-from flexpp.utils import get_GCDFT, get_nelect_incar, get_nelect_neu_pp
+from flexpp.utils import fetch_GCDFT, count_nelect_incar, count_valence_nelect_pp
 
 
 def langevin_fdt(
@@ -77,13 +77,13 @@ def langevin_fdt(
     if restart_traj and 'charge' in geom_md.calc.todict().keys():
         charge_now = geom_md.calc.todict()['charge']
         geom_md.set_calculator(mycalc)
-        nelect_neu = get_nelect_neu_pp(geom_md) #to check with vaspsol!
+        nelect_neu = count_valence_nelect_pp(geom_md) #to check with vaspsol!
         print(f'Charge state read from trajectory: {charge_now:.4f} |e|')
     else:
         geom_md.set_calculator(mycalc)
-        nelect_neu = get_nelect_neu_pp(geom_md)
+        nelect_neu = count_valence_nelect_pp(geom_md)
         try:
-            nelect_now = get_nelect_incar(label)
+            nelect_now = count_nelect_incar(label)
             charge_now = nelect_neu-nelect_now
             print(f'Charge state read from last INCAR: {charge_now:.4f} |e|')
         except:
@@ -110,7 +110,7 @@ def langevin_fdt(
     while nsteps_done < nsteps:
         dyn.run(potentiostat_nsteps)
         nsteps_done += potentiostat_nsteps
-        nelect_net_now, pot_now, _,  energy_gcdft_now = get_GCDFT(pot_ref, dirName=label)
+        nelect_net_now, pot_now, _,  energy_gcdft_now = fetch_GCDFT(pot_ref, dirName=label)
         traj_nelect.append(nelect_net_now)
         traj_pot.append(pot_now)
         traj_gcfe.append(energy_gcdft_now)
